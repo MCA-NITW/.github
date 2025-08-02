@@ -54,7 +54,7 @@ To be the premier platform for MCA students to develop cutting-edge skills, cont
 
 | 📚 **Program Highlights** | 🛠️ **Key Technologies** | 🎓 **Career Paths** |
 |:------------------------:|:----------------------:|:-------------------:|
-| 2-Year Master's Program | Programming Languages | Software Developer |
+| 3-Year Master's Program | Programming Languages | Software Developer |
 | Industry-Aligned Curriculum | Database Management | Data Scientist |
 | Research Opportunities | Web Technologies | System Analyst |
 | Practical Projects | Mobile Development | Product Manager |
