@@ -39,15 +39,39 @@ If you come across any issues or bugs in the organization's repositories, feel f
 
 Engage in discussions, ask questions, and provide support to your fellow MCA students in the organization's discussion forums. Share your thoughts, seek advice, or contribute to ongoing discussions related to programming, projects, career opportunities, and more.
 
-## Join the MCA NITW GitHub Organization
+## 📢 Want to Join the MCA NITW GitHub Organization?
 
-To join the MCA NITW GitHub Organization and become part of this vibrant community, follow these steps:
+**Anyone can contribute!** To become a member of our vibrant community, follow these simple steps:
 
-1. Sign up for a GitHub account if you don't have one already.
-2. Visit the [MCA NITW GitHub Organization](https://github.com/mca-nitw) page.
-3. Click on the "Join" button to request membership.
-4. Once your request is reviewed and approved, you will be able to access all the organization's repositories, projects, and resources.
+### How to Request Membership
+
+1. **Open a Join Request Issue**: Go to our [community repository](https://github.com/MCA-NITW/.github/issues) and create a new issue
+2. **Use the Join Request Template**: Select the "Join Request" template when creating your issue
+3. **Fill in Your Details**: Include your GitHub username and briefly describe your interest
+4. **Wait for Review**: We'll review your request and send an invite within a few days
+
+### Quick Steps
+
+1. 🔗 [Click here to open a join request](https://github.com/MCA-NITW/.github/issues/new?assignees=&labels=join-request&template=join-request.yml&title=%5BJoin+Request%5D+%40your-username)
+2. 📝 Fill in the form with your details
+3. 🚀 Submit and wait for approval!
+
+### What You'll Get Access To
+
+- ✅ All organization repositories and projects
+- ✅ Collaboration opportunities with fellow MCA students
+- ✅ Access to knowledge sharing resources
+- ✅ Participation in discussions and community events
+- ✅ Mentorship and support from peers and seniors
+
+### Requirements
+
+- Must have a GitHub account
+- Interest in learning and contributing to the MCA community
+- Willingness to follow our code of conduct and community guidelines
 
 Let's collaborate, learn, and grow together as MCA students at NITW! Feel free to explore the organization's repositories, contribute to ongoing projects, and engage with fellow students. If you have any questions or need assistance, don't hesitate to reach out to the organization administrators.
 
-Happy coding!
+**Ready to join?** [Create your join request now!](https://github.com/MCA-NITW/.github/issues/new?assignees=&labels=join-request&template=join-request.yml&title=%5BJoin+Request%5D+%40your-username)
+
+Happy coding! 🎉

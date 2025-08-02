@@ -1,0 +1,129 @@
+name: 🚀 Join Request
+description: Request to join the MCA NITW GitHub Organization
+title: '[Join Request] @your-username'
+labels: ['join-request']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Welcome to MCA NITW! 🎉
+        
+        Thank you for your interest in joining our GitHub organization. We're excited to have you as part of our community!
+        
+        Please fill out the form below to request membership. We'll review your request and send you an invitation within a few days.
+
+  - type: input
+    id: github-username
+    attributes:
+      label: GitHub Username
+      description: Your GitHub username (without the @ symbol)
+      placeholder: e.g., john-doe
+    validations:
+      required: true
+
+  - type: input
+    id: real-name
+    attributes:
+      label: Full Name
+      description: Your full name (optional but helps us know who you are)
+      placeholder: e.g., John Doe
+
+  - type: dropdown
+    id: student-status
+    attributes:
+      label: Are you currently an MCA student at NITW?
+      description: Select your current status
+      options:
+        - "Yes, I'm a current MCA student at NITW"
+        - "Yes, I'm an MCA alumnus from NITW"
+        - "No, but I'm interested in contributing to the community"
+        - "Other (please specify in the description below)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: year-batch
+    attributes:
+      label: If you're a current student or alumnus, which batch/year?
+      description: Select your batch year
+      options:
+        - "2024-2026"
+        - "2023-2025"
+        - "2022-2024"
+        - "2021-2023"
+        - "2020-2022"
+        - "Earlier batch"
+        - "Not applicable"
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Why do you want to join?
+      description: Tell us about your interest in joining the MCA NITW organization
+      placeholder: |
+        Please share:
+        - Your interest in programming/technology
+        - What you hope to contribute to the community
+        - Any specific projects or areas you're interested in
+        - How you plan to engage with the community
+    validations:
+      required: true
+
+  - type: dropdown
+    id: contribution-experience
+    attributes:
+      label: Have you contributed to open source projects before?
+      description: Let us know your experience with open source contributions
+      options:
+        - "Yes, I have significant experience"
+        - "Yes, I have some experience"
+        - "No, but I'm eager to learn"
+        - "No, I'm completely new to this"
+
+  - type: textarea
+    id: previous-contributions
+    attributes:
+      label: Previous Contributions (Optional)
+      description: If you have contributed before, please share links to your work
+      placeholder: |
+        You can include:
+        - Links to your GitHub repositories
+        - Links to pull requests you've made
+        - Links to issues you've helped with
+        - Any other relevant contributions
+
+  - type: textarea
+    id: skills-interests
+    attributes:
+      label: Technical Skills & Interests
+      description: What programming languages, frameworks, or technologies are you interested in?
+      placeholder: |
+        e.g., Python, Java, JavaScript, React, Machine Learning, Data Science, 
+        Web Development, Mobile Development, etc.
+
+  - type: checkboxes
+    id: code-of-conduct
+    attributes:
+      label: Code of Conduct
+      description: By submitting this request, you agree to follow our community guidelines
+      options:
+        - label: I agree to follow the GitHub Community Guidelines and the MCA NITW organization's code of conduct
+          required: true
+        - label: I understand that membership is subject to review and approval by organization administrators
+          required: true
+        - label: I commit to being respectful and collaborative with fellow community members
+          required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ## What happens next?
+        
+        1. 📋 **Review**: Our team will review your request
+        2. 📧 **Invitation**: If approved, you'll receive an email invitation to join the organization
+        3. 🎉 **Welcome**: Once you accept, you'll have access to all organization repositories and resources
+        4. 🤝 **Onboarding**: We'll help you get started and find ways to contribute
+        
+        **Questions?** Feel free to comment on this issue if you have any questions about the process.
+        
+        Thank you for your interest in joining the MCA NITW community! 🚀
