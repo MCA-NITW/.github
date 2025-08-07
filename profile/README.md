@@ -6,7 +6,6 @@
 
 <p align="center">
   <img src="https://komarev.com/ghpvc/?username=MCA-NITW&label=Profile%20views&color=0e75b6&style=for-the-badge" alt="Profile views" />
-  <img src="https://img.shields.io/badge/Established-2020-blue?style=for-the-badge" alt="Established" />
   <img src="https://img.shields.io/badge/Students-Active-green?style=for-the-badge" alt="Active Students" />
 </p>
 
