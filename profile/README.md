@@ -292,7 +292,7 @@ Cross-platform applications solving real-world problems
 </td>
 <td align="center">
 
-### � **Language Distribution**
+### 💻 **Language Distribution**
 
 <img src="https://github-readme-stats.vercel.app/api/top-langs/?username=MCA-NITW&layout=compact&theme=tokyonight" alt="Top Languages" width="400"/>
 
@@ -323,7 +323,7 @@ Cross-platform applications solving real-world problems
 <a href="https://github.com/MCA-NITW">
   <img src="https://img.shields.io/badge/🏠_Organization-Explore_Repos-FF6B6B?style=for-the-badge&logo=github" alt="Organization" />
 </a>
-<a href="#">
+<a href="https://github.com/MCA-NITW/knowledge-base">
   <img src="https://img.shields.io/badge/📚_Knowledge_Base-Learn_More-45B7D1?style=for-the-badge&logo=bookstack" alt="Knowledge Base" />
 </a>
 </p>

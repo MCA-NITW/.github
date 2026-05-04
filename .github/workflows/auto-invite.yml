@@ -6,225 +6,372 @@ on:
   issue_comment:
     types: [created]
 
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: auto-invite-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
 jobs:
   auto-invite:
-    if: contains(github.event.issue.labels.*.name, 'join-request') && (github.event.action == 'labeled' || (github.event.action == 'created' && contains(github.event.comment.body, '/approve')))
+    if: >-
+      contains(github.event.issue.labels.*.name, 'join-request') &&
+      (github.event.action == 'labeled' ||
+       (github.event.action == 'created' && contains(github.event.comment.body, '/approve')))
     runs-on: ubuntu-latest
-    
-    steps:
-      - name: Check if issue has join-request label
-        id: check-label
-        run: |
-          if [[ "${{ contains(github.event.issue.labels.*.name, 'join-request') }}" == "true" ]]; then
-            echo "has_join_request=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_join_request=false" >> $GITHUB_OUTPUT
-          fi
+    timeout-minutes: 5
 
+    steps:
       - name: Extract username from issue
         id: extract-username
-        if: steps.check-label.outputs.has_join_request == 'true'
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
-          # Extract username from issue title or body
-          ISSUE_TITLE="${{ github.event.issue.title }}"
-          ISSUE_BODY="${{ github.event.issue.body }}"
-          
-          # Try to extract from title first (format: [Join Request] @username)
-          USERNAME=$(echo "$ISSUE_TITLE" | grep -oP '(?<=@)[a-zA-Z0-9_-]+' | head -1)
-          
-          # If not found in title, try to extract from body
+          set -euo pipefail
+
+          USERNAME_RE='[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}'
+
+          USERNAME=$(printf '%s' "$ISSUE_TITLE" | grep -oP "(?<=@)${USERNAME_RE}" | head -1 || true)
+
           if [ -z "$USERNAME" ]; then
-            USERNAME=$(echo "$ISSUE_BODY" | grep -oP '(?<=GitHub Username[:\s]*)[a-zA-Z0-9_-]+' | head -1)
+            USERNAME=$(printf '%s' "$ISSUE_BODY" \
+              | grep -oPz '(?s)###\s*GitHub Username\s*\n+\K[a-zA-Z0-9][a-zA-Z0-9-]{0,38}' \
+              | tr -d '\0' \
+              | head -1 || true)
           fi
-          
+
+          if [ "$USERNAME" = "your-username" ]; then
+            echo "Placeholder username detected; refusing to invite."
+            USERNAME=""
+          fi
+
           if [ -n "$USERNAME" ]; then
-            echo "username=$USERNAME" >> $GITHUB_OUTPUT
+            echo "username=$USERNAME" >> "$GITHUB_OUTPUT"
             echo "Found username: $USERNAME"
           else
-            echo "username=" >> $GITHUB_OUTPUT
-            echo "Could not extract username"
+            echo "username=" >> "$GITHUB_OUTPUT"
+            echo "Could not extract a valid username"
           fi
 
       - name: Send organization invitation
         id: send-invite
         if: steps.extract-username.outputs.username != ''
+        env:
+          USERNAME: ${{ steps.extract-username.outputs.username }}
+          ORG_INVITE_TOKEN: ${{ secrets.ORG_INVITE_TOKEN }}
         run: |
-          USERNAME="${{ steps.extract-username.outputs.username }}"
+          set -euo pipefail
+
           ORG_NAME="MCA-NITW"
-          
-          # Send invitation using GitHub API
-          RESPONSE=$(curl -s -w "%{http_code}" \
+
+          HTTP_CODE=$(curl -sS -o /tmp/invite_body.json -w "%{http_code}" \
             -X PUT \
-            -H "Authorization: token ${{ secrets.ORG_INVITE_TOKEN }}" \
+            -H "Authorization: token ${ORG_INVITE_TOKEN}" \
             -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/orgs/$ORG_NAME/memberships/$USERNAME" \
+            "https://api.github.com/orgs/${ORG_NAME}/memberships/${USERNAME}" \
             -d '{"role":"member"}')
-          
-          HTTP_CODE="${RESPONSE: -3}"
-          RESPONSE_BODY="${RESPONSE%???}"
-          
+
+          BODY=$(cat /tmp/invite_body.json)
           echo "HTTP Code: $HTTP_CODE"
-          echo "Response: $RESPONSE_BODY"
-          
-          if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 201 ]; then
-            echo "success=true" >> $GITHUB_OUTPUT
-            echo "message=Invitation sent successfully" >> $GITHUB_OUTPUT
+          echo "Response: $BODY"
+
+          STATE=$(printf '%s' "$BODY" | jq -r '.state // empty')
+
+          if [ "$HTTP_CODE" = "200" ] && [ "$STATE" = "active" ]; then
+            echo "outcome=already-member" >> "$GITHUB_OUTPUT"
+            echo "message=User is already an organization member" >> "$GITHUB_OUTPUT"
+          elif [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
+            echo "outcome=invited" >> "$GITHUB_OUTPUT"
+            echo "message=Invitation sent successfully" >> "$GITHUB_OUTPUT"
           else
-            echo "success=false" >> $GITHUB_OUTPUT
-            echo "message=Failed to send invitation (HTTP $HTTP_CODE)" >> $GITHUB_OUTPUT
+            echo "outcome=failed" >> "$GITHUB_OUTPUT"
+            echo "message=Failed to send invitation (HTTP $HTTP_CODE)" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Comment on issue - Success
-        if: steps.send-invite.outputs.success == 'true'
+      - name: Comment on issue - Invited
+        if: steps.send-invite.outputs.outcome == 'invited'
         uses: actions/github-script@v8
+        env:
+          USERNAME: ${{ steps.extract-username.outputs.username }}
         with:
           script: |
-            github.rest.issues.createComment({
+            const username = process.env.USERNAME;
+            const body = [
+              `🎉 **Welcome to MCA NITW!**`,
+              ``,
+              `Hi @${username}!`,
+              ``,
+              `Great news! We've sent you an organization invitation. Here's what to do next:`,
+              ``,
+              `## Next Steps:`,
+              `1. 📧 **Check your email** - You should receive an invitation email from GitHub`,
+              `2. 🔗 **Accept the invitation** - Click the link in the email or go to [github.com/orgs/MCA-NITW/invitation](https://github.com/orgs/MCA-NITW/invitation)`,
+              `3. 🎯 **Set your membership visibility** - Consider making your membership public to help others find you`,
+              `4. 🚀 **Start contributing** - Explore our repositories and join ongoing projects`,
+              ``,
+              `## Getting Started:`,
+              `- 📚 Check out our [Knowledge Base](https://github.com/MCA-NITW/knowledge-base)`,
+              `- 💬 Join our [Discussions](https://github.com/orgs/MCA-NITW/discussions)`,
+              `- 🤝 Introduce yourself to the community`,
+              `- 📋 Look for issues labeled \`good first issue\` to start contributing`,
+              ``,
+              `Welcome to the community! If you have any questions, feel free to ask in our discussions or comment here.`,
+              ``,
+              `Happy coding! 🚀`,
+              ``,
+              `---`,
+              `*This invitation was sent automatically. If you don't receive the email within a few minutes, please check your spam folder or comment below.*`,
+            ].join('\n');
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `🎉 **Welcome to MCA NITW!**
+              body,
+            });
 
-              Hi @${{ steps.extract-username.outputs.username }}! 
-              
-              Great news! We've sent you an organization invitation. Here's what to do next:
-              
-              ## Next Steps:
-              1. 📧 **Check your email** - You should receive an invitation email from GitHub
-              2. 🔗 **Accept the invitation** - Click the link in the email or go to [github.com/orgs/MCA-NITW/invitation](https://github.com/orgs/MCA-NITW/invitation)
-              3. 🎯 **Set your membership visibility** - Consider making your membership public to help others find you
-              4. 🚀 **Start contributing** - Explore our repositories and join ongoing projects
-              
-              ## Getting Started:
-              - 📚 Check out our [Knowledge Base](https://github.com/MCA-NITW/knowledge-base)
-              - 💬 Join our [Discussions](https://github.com/orgs/MCA-NITW/discussions)
-              - 🤝 Introduce yourself to the community
-              - 📋 Look for issues labeled \`good first issue\` to start contributing
-              
-              Welcome to the community! If you have any questions, feel free to ask in our discussions or comment here.
-              
-              Happy coding! 🚀
-              
-              ---
-              *This invitation was sent automatically. If you don't receive the email within a few minutes, please check your spam folder or comment below.*`
-            })
+      - name: Comment on issue - Already a member
+        if: steps.send-invite.outputs.outcome == 'already-member'
+        uses: actions/github-script@v8
+        env:
+          USERNAME: ${{ steps.extract-username.outputs.username }}
+        with:
+          script: |
+            const username = process.env.USERNAME;
+            const body = [
+              `✅ **Already a member!**`,
+              ``,
+              `Hi @${username}, you're already an active member of the MCA NITW organization — no invitation needed. 🎉`,
+              ``,
+              `Closing this request. If you believe this is in error, please comment and an administrator will take a look.`,
+            ].join('\n');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
 
       - name: Comment on issue - Failed
-        if: steps.send-invite.outputs.success == 'false'
+        if: steps.send-invite.outputs.outcome == 'failed'
         uses: actions/github-script@v8
+        env:
+          USERNAME: ${{ steps.extract-username.outputs.username }}
+          MESSAGE: ${{ steps.send-invite.outputs.message }}
         with:
           script: |
-            github.rest.issues.createComment({
+            const username = process.env.USERNAME;
+            const message = process.env.MESSAGE;
+            const body = [
+              `❌ **Invitation Failed**`,
+              ``,
+              `Hi @${username},`,
+              ``,
+              `We encountered an issue while trying to send your organization invitation:`,
+              ``,
+              `**Error:** ${message}`,
+              ``,
+              `## What you can do:`,
+              `1. 🔍 **Double-check your username** - Make sure your GitHub username is correct`,
+              `2. 📧 **Contact an administrator** - One of our team members will manually send the invitation`,
+              `3. 💬 **Join our discussions** - You can still participate in our community discussions`,
+              ``,
+              `## Alternative ways to get help:`,
+              `- Comment on this issue with your correct GitHub username`,
+              `- Join our [discussions](https://github.com/orgs/MCA-NITW/discussions) and mention this issue`,
+              `- Check if you already have a pending invitation at [github.com/orgs/MCA-NITW/invitation](https://github.com/orgs/MCA-NITW/invitation)`,
+              ``,
+              `Don't worry - our administrators will help you get this sorted out!`,
+              ``,
+              `---`,
+              `*An administrator will review this request and send a manual invitation if needed.*`,
+            ].join('\n');
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `❌ **Invitation Failed**
-              
-              Hi @${{ steps.extract-username.outputs.username }},
-              
-              We encountered an issue while trying to send your organization invitation:
-              
-              **Error:** ${{ steps.send-invite.outputs.message }}
-              
-              ## What you can do:
-              1. 🔍 **Double-check your username** - Make sure your GitHub username is correct
-              2. 📧 **Contact an administrator** - One of our team members will manually send the invitation
-              3. 💬 **Join our discussions** - You can still participate in our community discussions
-              
-              ## Alternative ways to get help:
-              - Comment on this issue with your correct GitHub username
-              - Join our [discussions](https://github.com/orgs/MCA-NITW/discussions) and mention this issue
-              - Check if you already have a pending invitation at [github.com/orgs/MCA-NITW/invitation](https://github.com/orgs/MCA-NITW/invitation)
-              
-              Don't worry - our administrators will help you get this sorted out! 
-              
-              ---
-              *An administrator will review this request and send a manual invitation if needed.*`
-            })
+              body,
+            });
 
-      - name: Add status labels
+      - name: Comment on issue - Username missing
+        if: steps.extract-username.outputs.username == ''
         uses: actions/github-script@v8
         with:
           script: |
+            const body = [
+              `⚠️ **Could not determine your GitHub username.**`,
+              ``,
+              `Please make sure:`,
+              `- The issue title still matches \`[Join Request] @your-github-username\` (replace the placeholder).`,
+              `- The **GitHub Username** field in the form contains only your username, without the \`@\`.`,
+              ``,
+              `An administrator can re-trigger the invitation by commenting \`/approve\` once the username is corrected.`,
+            ].join('\n');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+      - name: Update status labels
+        if: steps.send-invite.outcome != 'skipped'
+        uses: actions/github-script@v8
+        env:
+          OUTCOME: ${{ steps.send-invite.outputs.outcome }}
+        with:
+          script: |
+            const outcome = process.env.OUTCOME;
+            const managed = ['invite-sent', 'invite-failed', 'pending-review', 'member-joined'];
+
             const { data: currentLabels } = await github.rest.issues.listLabelsOnIssue({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number
+              issue_number: context.issue.number,
             });
-            
-            // Remove any existing status labels
-            const statusLabels = ['invite-sent', 'invite-failed', 'pending-review'];
+
             for (const label of currentLabels) {
-              if (statusLabels.includes(label.name)) {
+              if (managed.includes(label.name)) {
                 await github.rest.issues.removeLabel({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: context.issue.number,
-                  name: label.name
+                  name: label.name,
                 });
               }
             }
-            
-            // Add appropriate status label
-            const newLabel = "${{ steps.send-invite.outputs.success }}" === "true" ? "invite-sent" : "invite-failed";
-            await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              labels: [newLabel]
-            });
+
+            const map = {
+              invited: 'invite-sent',
+              'already-member': 'member-joined',
+              failed: 'invite-failed',
+            };
+            const newLabel = map[outcome];
+            if (newLabel) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: [newLabel],
+              });
+            }
 
   manual-approval:
-    if: github.event.action == 'created' && contains(github.event.comment.body, '/manual-invite') && github.event.comment.author_association == 'MEMBER'
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.action == 'created' &&
+      contains(github.event.issue.labels.*.name, 'join-request') &&
+      contains(github.event.comment.body, '/manual-invite') &&
+      (github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'MEMBER')
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 5
+
     steps:
       - name: Extract username for manual invite
         id: manual-extract
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
-          COMMENT_BODY="${{ github.event.comment.body }}"
-          USERNAME=$(echo "$COMMENT_BODY" | grep -oP '(?<=/manual-invite\s+)[a-zA-Z0-9_-]+' | head -1)
-          
+          set -euo pipefail
+
+          USERNAME=$(printf '%s' "$COMMENT_BODY" \
+            | grep -oP '(?<=/manual-invite[[:space:]]@?)[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}' \
+            | head -1 || true)
+
           if [ -n "$USERNAME" ]; then
-            echo "username=$USERNAME" >> $GITHUB_OUTPUT
+            echo "username=$USERNAME" >> "$GITHUB_OUTPUT"
           else
-            echo "username=" >> $GITHUB_OUTPUT
+            echo "username=" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Send manual invitation
+        id: manual-send
         if: steps.manual-extract.outputs.username != ''
+        env:
+          USERNAME: ${{ steps.manual-extract.outputs.username }}
+          ORG_INVITE_TOKEN: ${{ secrets.ORG_INVITE_TOKEN }}
         run: |
-          USERNAME="${{ steps.manual-extract.outputs.username }}"
+          set -euo pipefail
+
           ORG_NAME="MCA-NITW"
-          
-          RESPONSE=$(curl -s -w "%{http_code}" \
+
+          HTTP_CODE=$(curl -sS -o /tmp/manual_body.json -w "%{http_code}" \
             -X PUT \
-            -H "Authorization: token ${{ secrets.ORG_INVITE_TOKEN }}" \
+            -H "Authorization: token ${ORG_INVITE_TOKEN}" \
             -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/orgs/$ORG_NAME/memberships/$USERNAME" \
+            "https://api.github.com/orgs/${ORG_NAME}/memberships/${USERNAME}" \
             -d '{"role":"member"}')
-          
-          HTTP_CODE="${RESPONSE: -3}"
-          
-          if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 201 ]; then
-            echo "Manual invitation sent successfully to $USERNAME"
+
+          echo "HTTP Code: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
+            echo "outcome=ok" >> "$GITHUB_OUTPUT"
           else
-            echo "Failed to send manual invitation (HTTP $HTTP_CODE)"
-            exit 1
+            echo "outcome=failed" >> "$GITHUB_OUTPUT"
+            echo "http_code=$HTTP_CODE" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Comment on manual invite success
-        if: success()
+      - name: Comment on manual invite - success
+        if: steps.manual-send.outputs.outcome == 'ok'
         uses: actions/github-script@v8
+        env:
+          USERNAME: ${{ steps.manual-extract.outputs.username }}
+          ACTOR: ${{ github.event.comment.user.login }}
         with:
           script: |
-            github.rest.issues.createComment({
+            const username = process.env.USERNAME;
+            const actor = process.env.ACTOR;
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `✅ **Manual Invitation Sent**
-              
-              @${{ github.event.comment.user.login }} has manually sent an invitation to @${{ steps.manual-extract.outputs.username }}.
-              
-              The user should receive an email invitation shortly.`
-            })
+              body: [
+                `✅ **Manual Invitation Sent**`,
+                ``,
+                `@${actor} has manually sent an invitation to @${username}.`,
+                ``,
+                `The user should receive an email invitation shortly.`,
+              ].join('\n'),
+            });
+
+      - name: Comment on manual invite - failed
+        if: steps.manual-send.outputs.outcome == 'failed'
+        uses: actions/github-script@v8
+        env:
+          USERNAME: ${{ steps.manual-extract.outputs.username }}
+          HTTP_CODE: ${{ steps.manual-send.outputs.http_code }}
+        with:
+          script: |
+            const username = process.env.USERNAME;
+            const httpCode = process.env.HTTP_CODE;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: [
+                `❌ **Manual Invitation Failed**`,
+                ``,
+                `Could not send an invitation to @${username} (HTTP ${httpCode}).`,
+                ``,
+                `Check the Actions logs for details and retry with a corrected username.`,
+              ].join('\n'),
+            });
+
+      - name: Comment on manual invite - missing username
+        if: steps.manual-extract.outputs.username == ''
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: [
+                `⚠️ **Could not parse username from \`/manual-invite\` command.**`,
+                ``,
+                `Use the form \`/manual-invite @username\` or \`/manual-invite username\`.`,
+              ].join('\n'),
+            });

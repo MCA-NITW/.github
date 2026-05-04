@@ -5,10 +5,16 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/label-management.yml'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
 
 jobs:
   create-labels:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Create or Update Labels
         uses: actions/github-script@v8
@@ -37,7 +43,7 @@ jobs:
               },
               {
                 name: 'approved',
-                color: '28a745',
+                color: '2ea043',
                 description: 'Join request has been approved'
               },
               {
@@ -47,16 +53,16 @@ jobs:
               }
             ];
 
+            let failed = 0;
+
             for (const label of labels) {
               try {
-                // Try to get the existing label
                 await github.rest.issues.getLabel({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   name: label.name
                 });
-                
-                // If it exists, update it
+
                 await github.rest.issues.updateLabel({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
@@ -64,22 +70,30 @@ jobs:
                   color: label.color,
                   description: label.description
                 });
-                
-                console.log(`Updated label: ${label.name}`);
+
+                core.info(`Updated label: ${label.name}`);
               } catch (error) {
                 if (error.status === 404) {
-                  // Label doesn't exist, create it
-                  await github.rest.issues.createLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    name: label.name,
-                    color: label.color,
-                    description: label.description
-                  });
-                  
-                  console.log(`Created label: ${label.name}`);
+                  try {
+                    await github.rest.issues.createLabel({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      name: label.name,
+                      color: label.color,
+                      description: label.description
+                    });
+                    core.info(`Created label: ${label.name}`);
+                  } catch (createError) {
+                    failed++;
+                    core.error(`Failed to create label ${label.name}: ${createError.message}`);
+                  }
                 } else {
-                  console.error(`Error managing label ${label.name}:`, error);
+                  failed++;
+                  core.error(`Failed to manage label ${label.name}: ${error.message}`);
                 }
               }
+            }
+
+            if (failed > 0) {
+              core.setFailed(`${failed} label operation(s) failed`);
             }

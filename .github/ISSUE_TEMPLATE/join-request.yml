@@ -47,6 +47,8 @@ body:
       label: If you're a current student or alumnus, which batch/year?
       description: Select your batch year
       options:
+        - "2026-2028"
+        - "2025-2027"
         - "2024-2026"
         - "2023-2025"
         - "2022-2024"

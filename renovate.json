@@ -4,13 +4,6 @@
   "schedule": ["on the first day of the month"],
   "groupName": "all-dependencies",
   "groupSlug": "all",
-  "packageRules": [
-    {
-      "matchPackagePatterns": ["*"],
-      "groupName": "all-dependencies",
-      "groupSlug": "all"
-    }
-  ],
   "prCreation": "not-pending",
   "prHourlyLimit": 1,
   "prConcurrentLimit": 1,
