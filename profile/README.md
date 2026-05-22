@@ -13,7 +13,7 @@
 
 ## About
 
-GitHub organization for the MCA department at NIT Warangal (2023-2026 batch). We maintain shared academic resources, a placement portal, and collaborative tools for students.
+GitHub organization for the MCA department at NIT Warangal. We maintain shared academic resources, a placement portal, and collaborative tools for students.
 
 **Admins:** [@Sagargupta16](https://github.com/Sagargupta16), [@sachin-gupta99](https://github.com/sachin-gupta99)
 
