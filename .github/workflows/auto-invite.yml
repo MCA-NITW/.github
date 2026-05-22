@@ -93,7 +93,7 @@ jobs:
 
       - name: Comment on issue - Invited
         if: steps.send-invite.outputs.outcome == 'invited'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           USERNAME: ${{ steps.extract-username.outputs.username }}
         with:
@@ -134,7 +134,7 @@ jobs:
 
       - name: Comment on issue - Already a member
         if: steps.send-invite.outputs.outcome == 'already-member'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           USERNAME: ${{ steps.extract-username.outputs.username }}
         with:
@@ -156,7 +156,7 @@ jobs:
 
       - name: Comment on issue - Failed
         if: steps.send-invite.outputs.outcome == 'failed'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           USERNAME: ${{ steps.extract-username.outputs.username }}
           MESSAGE: ${{ steps.send-invite.outputs.message }}
@@ -197,7 +197,7 @@ jobs:
 
       - name: Comment on issue - Username missing
         if: steps.extract-username.outputs.username == ''
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const body = [
@@ -218,7 +218,7 @@ jobs:
 
       - name: Update status labels
         if: steps.send-invite.outcome != 'skipped'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           OUTCOME: ${{ steps.send-invite.outputs.outcome }}
         with:
@@ -316,7 +316,7 @@ jobs:
 
       - name: Comment on manual invite - success
         if: steps.manual-send.outputs.outcome == 'ok'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           USERNAME: ${{ steps.manual-extract.outputs.username }}
           ACTOR: ${{ github.event.comment.user.login }}
@@ -339,7 +339,7 @@ jobs:
 
       - name: Comment on manual invite - failed
         if: steps.manual-send.outputs.outcome == 'failed'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           USERNAME: ${{ steps.manual-extract.outputs.username }}
           HTTP_CODE: ${{ steps.manual-send.outputs.http_code }}
@@ -362,7 +362,7 @@ jobs:
 
       - name: Comment on manual invite - missing username
         if: steps.manual-extract.outputs.username == ''
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             await github.rest.issues.createComment({
