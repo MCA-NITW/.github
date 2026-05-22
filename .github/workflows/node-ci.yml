@@ -1,0 +1,126 @@
+name: Reusable Node CI
+
+# Auto-detects pnpm vs npm based on lockfile.
+# Runs install, build, test (if present), lint (if present).
+#
+# Usage from a consumer repo:
+#   jobs:
+#     ci:
+#       uses: mca-nitw/.github/.github/workflows/node-ci.yml@main
+#       with:
+#         node-version: "22.x"
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version (e.g. "22.x")
+        required: false
+        type: string
+        default: "22.x"
+      run-tests:
+        description: Whether to run tests after build
+        required: false
+        type: boolean
+        default: true
+      run-lint:
+        description: Whether to run lint script if present
+        required: false
+        type: boolean
+        default: true
+      build-script:
+        description: npm/pnpm script to run for build
+        required: false
+        type: string
+        default: build
+      working-directory:
+        description: Run all commands inside this directory
+        required: false
+        type: string
+        default: "."
+
+jobs:
+  ci:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Detect package manager
+        id: pm
+        shell: bash
+        run: |
+          cd "${{ inputs.working-directory }}"
+          if [ -f "pnpm-lock.yaml" ]; then
+            echo "manager=pnpm" >> "$GITHUB_OUTPUT"
+          elif [ -f "yarn.lock" ]; then
+            echo "manager=yarn" >> "$GITHUB_OUTPUT"
+          else
+            echo "manager=npm" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Detected: $(cat $GITHUB_OUTPUT | grep manager= | cut -d= -f2)"
+
+      - name: Setup pnpm
+        if: steps.pm.outputs.manager == 'pnpm'
+        uses: pnpm/action-setup@ac6db6d3c1f721f886538a378a2d73e85697340a # v6
+
+      - name: Setup Node.js ${{ inputs.node-version }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: ${{ steps.pm.outputs.manager }}
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          case "${{ steps.pm.outputs.manager }}" in
+            pnpm) pnpm install --frozen-lockfile ;;
+            yarn) yarn install --frozen-lockfile ;;
+            npm)  npm ci ;;
+          esac
+
+      - name: Lint (if script exists)
+        if: inputs.run-lint
+        shell: bash
+        run: |
+          if grep -q '"lint"' package.json; then
+            case "${{ steps.pm.outputs.manager }}" in
+              pnpm) pnpm run lint ;;
+              yarn) yarn lint ;;
+              npm)  npm run lint ;;
+            esac
+          else
+            echo "No lint script defined — skipping."
+          fi
+
+      - name: Build (${{ inputs.build-script }})
+        shell: bash
+        run: |
+          if grep -q "\"${{ inputs.build-script }}\"" package.json; then
+            case "${{ steps.pm.outputs.manager }}" in
+              pnpm) pnpm run ${{ inputs.build-script }} ;;
+              yarn) yarn ${{ inputs.build-script }} ;;
+              npm)  npm run ${{ inputs.build-script }} ;;
+            esac
+          else
+            echo "No ${{ inputs.build-script }} script defined — skipping."
+          fi
+
+      - name: Test (if script exists)
+        if: inputs.run-tests
+        shell: bash
+        run: |
+          if grep -q '"test"' package.json; then
+            case "${{ steps.pm.outputs.manager }}" in
+              pnpm) pnpm test ;;
+              yarn) yarn test ;;
+              npm)  npm test ;;
+            esac
+          else
+            echo "No test script defined — skipping."
+          fi
