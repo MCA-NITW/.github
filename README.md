@@ -1,41 +1,60 @@
-# MCA NITW GitHub Organization Settings
+# MCA-NITW/.github
 
-This repository contains the configuration files and automation for the MCA NITW GitHub Organization.
+Organization-level configuration for [MCA-NITW](https://github.com/MCA-NITW).
 
-## 🚀 Quick Links
+## What's in here
 
-- **[Join the Organization](https://github.com/MCA-NITW/.github/issues/new?assignees=&labels=join-request&template=join-request.yml&title=%5BJoin+Request%5D+%40your-username)** - Submit a request to become a member
-- **[Organization Profile](https://github.com/MCA-NITW)** - Visit our main organization page
-- **[Community Discussions](https://github.com/orgs/MCA-NITW/discussions)** - Join ongoing discussions
+| Path | Purpose |
+|------|---------|
+| `profile/README.md` | Org profile shown on github.com/MCA-NITW |
+| `.github/workflows/auto-invite.yml` | Automated member invitations via issue form |
+| `.github/workflows/label-management.yml` | Creates/syncs org-wide issue labels |
+| `.github/workflows/node-ci.yml` | Reusable CI: install + lint + build + test (pnpm/npm/yarn) |
+| `.github/workflows/format-check.yml` | Reusable: Prettier --check |
+| `.github/workflows/security-scan.yml` | Reusable: Trivy + Dependency Review |
+| `.github/workflows/markdown-check.yml` | Reusable: markdownlint + dead-link check |
+| `.github/ISSUE_TEMPLATE/` | Join-request form |
+| `.github/CONTRIBUTING.md` | Inherited by all repos without their own |
+| `.github/SECURITY.md` | Inherited security policy |
+| `.github/CODE_OF_CONDUCT.md` | Inherited code of conduct |
+| `.github/PULL_REQUEST_TEMPLATE.md` | Inherited PR checklist |
+| `.github/dependabot.yml` | Keeps our reusable workflow actions up to date |
+| `renovate.json` | Shared Renovate preset (repos extend via `"extends": ["github>mca-nitw/.github"]`) |
+| `INVITATION_SYSTEM.md` | Docs for the auto-invite workflow |
 
-## 📁 Contents
+## For admins
 
-- **`profile/README.md`** - Organization profile displayed on the main page
-- **`.github/ISSUE_TEMPLATE/`** - Templates for join requests and other issues
-- **`.github/workflows/`** - Automated workflows for member invitations
-- **`INVITATION_SYSTEM.md`** - Detailed documentation for the invitation system
+- **Add a new reusable workflow:** create it in `.github/workflows/`, use `on: workflow_call`.
+- **Update Renovate config for all repos:** edit `renovate.json` here — all repos inherit.
+- **Approve a join request manually:** comment `/approve` on the issue.
 
-## 🎯 Purpose
+## For consumer repos
 
-This repository serves as the central hub for:
+Replace your per-repo CI with a thin caller:
 
-1. **Organization Branding** - Profile README and organization information
-2. **Member Onboarding** - Automated invitation system for new members
-3. **Community Management** - Issue templates and workflow automation
-4. **Documentation** - Guides and instructions for organization processes
+```yaml
+# .github/workflows/ci.yml
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
-## 🔧 For Administrators
+jobs:
+  build:
+    uses: mca-nitw/.github/.github/workflows/node-ci.yml@main
+  format:
+    uses: mca-nitw/.github/.github/workflows/format-check.yml@main
+  security:
+    uses: mca-nitw/.github/.github/workflows/security-scan.yml@main
+    permissions:
+      contents: read
+      security-events: write
+```
 
-See [`INVITATION_SYSTEM.md`](./INVITATION_SYSTEM.md) for detailed setup and management instructions.
+And reduce `renovate.json` to:
 
-## 🤝 Contributing
-
-This repository is primarily maintained by organization administrators. If you have suggestions for improvements, please:
-
-1. Open an issue with your suggestion
-2. Join our [discussions](https://github.com/orgs/MCA-NITW/discussions)
-3. Contact an administrator directly
-
----
-
-**MCA NITW** - Master of Computer Applications, National Institute of Technology Warangal
+```json
+{ "extends": ["github>mca-nitw/.github"] }
+```
