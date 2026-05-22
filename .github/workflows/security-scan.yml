@@ -1,0 +1,69 @@
+name: Reusable Security Scan
+
+# Runs security tooling that should apply uniformly to every repo:
+# - Dependency Review (PRs only) — fails on high-severity vulns
+# - Trivy filesystem scan (uploads SARIF to Code Scanning tab)
+#
+# Usage:
+#   jobs:
+#     security:
+#       uses: mca-nitw/.github/.github/workflows/security-scan.yml@main
+
+on:
+  workflow_call:
+    inputs:
+      fail-on-severity:
+        description: Block PR on dependencies with this severity or higher
+        required: false
+        type: string
+        default: high
+      trivy-severity:
+        description: Comma-separated severities Trivy should report
+        required: false
+        type: string
+        default: CRITICAL,HIGH
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: ${{ inputs.fail-on-severity }}
+          allow-licenses: GPL-3.0, MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, CC-BY-4.0, CC0-1.0, Unlicense
+
+  trivy:
+    name: Trivy filesystem scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-results.sarif
+          severity: ${{ inputs.trivy-severity }}
+
+      - name: Upload Trivy SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy

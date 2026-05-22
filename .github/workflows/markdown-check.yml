@@ -1,0 +1,56 @@
+name: Reusable Markdown Check
+
+# For docs-only repos (Academic, etc).
+# - Lints Markdown with markdownlint
+# - Checks dead links with lychee
+#
+# Usage:
+#   jobs:
+#     docs:
+#       uses: mca-nitw/.github/.github/workflows/markdown-check.yml@main
+
+on:
+  workflow_call:
+    inputs:
+      glob:
+        description: Files markdownlint should check
+        required: false
+        type: string
+        default: "**/*.md"
+      check-links:
+        description: Whether to run lychee dead-link check
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  markdownlint:
+    name: Markdownlint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Run markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@05f32210e84442804257b2a6f20b273450ec8265 # v20
+        with:
+          globs: ${{ inputs.glob }}
+        continue-on-error: true
+
+  lychee:
+    name: Dead-link check
+    runs-on: ubuntu-latest
+    if: inputs.check-links
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Run lychee
+        uses: lycheeverse/lychee-action@1d97373ee35d3bed0f1d249ac37f5e6cad11fb89 # v2
+        with:
+          args: --no-progress --max-concurrency 4 --exclude-mail .
+          fail: false

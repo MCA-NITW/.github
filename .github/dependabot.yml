@@ -1,0 +1,24 @@
+# Org-wide Dependabot config — bumps GitHub Actions in our reusable workflows.
+# Renovate handles npm/pnpm/Docker/etc, so this only covers the actions ecosystem
+# inside this repo.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(actions)"
+    labels:
+      - dependencies
+      - github-actions
+    groups:
+      actions-minor-and-patch:
+        update-types:
+          - minor
+          - patch
