@@ -1,0 +1,162 @@
+name: 👥 Update Members in Profile README
+
+# Regenerates the members grid in profile/README.md from the org's PUBLIC member
+# list, then commits only when the rendered block actually changed.
+#
+# Why public members only: GitHub makes membership visibility member-controlled.
+# Per the REST docs for PUT /orgs/{org}/public_members/{username}, "The user can
+# publicize their own membership. (A user cannot publicize the membership for
+# another user.)" So an owner cannot opt anyone in, and hardcoding the members
+# who chose private would publish exactly what that setting hides. Members who
+# flip themselves to public appear here on the next run, with no code change.
+#
+# Why a schedule rather than an instant trigger: GitHub Actions has no
+# organization-membership event. Workflow triggers are repository-scoped, so
+# there is nothing to hook a "member joined" webhook onto without a GitHub App
+# or an external relay. A daily run plus manual dispatch covers it, and joining
+# is not instant anyway (the invitee has to accept, then set visibility).
+
+on:
+  schedule:
+    # 06:15 UTC daily. Offset off the hour because scheduled runs queue on the hour.
+    - cron: "15 6 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    # So a change to the generator or the surrounding README takes effect at once.
+    #
+    # This job commits to profile/README.md, which looks like it should retrigger
+    # itself. It does not: pushes made with the built-in GITHUB_TOKEN do not
+    # create workflow runs (only workflow_dispatch and repository_dispatch are
+    # exempt from that rule). The generator is idempotent regardless, so even a
+    # retrigger would find no diff and stop after one extra run.
+    paths:
+      - .github/workflows/update-members.yml
+      - profile/README.md
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-members
+  cancel-in-progress: false
+
+jobs:
+  update-members:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Regenerate members grid
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'profile/README.md';
+            const START = '<!-- MEMBERS:START -->';
+            const END = '<!-- MEMBERS:END -->';
+            const PER_ROW = 6;
+
+            // Public members only. This endpoint is the org's own opt-in list.
+            const members = await github.paginate(github.rest.orgs.listPublicMembers, {
+              org: context.repo.owner,
+              per_page: 100,
+            });
+
+            if (members.length === 0) {
+              core.setFailed(
+                'listPublicMembers returned nobody. Refusing to wipe the grid, ' +
+                  'since an API hiccup should not look like an empty org.'
+              );
+              return;
+            }
+
+            // Resolve display names. listPublicMembers returns the "simple user"
+            // shape, which has no name field.
+            const people = [];
+            for (const m of members) {
+              let name = null;
+              try {
+                const { data } = await github.rest.users.getByUsername({ username: m.login });
+                name = data.name;
+              } catch (e) {
+                core.warning(`Could not read profile for ${m.login}: ${e.message}`);
+              }
+              people.push({ login: m.login, name: (name || m.login).trim() });
+            }
+
+            // Sorted so the output is deterministic and reruns produce no diff.
+            people.sort((a, b) => a.login.toLowerCase().localeCompare(b.login.toLowerCase()));
+
+            const escape = (s) =>
+              s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+            const cell = (p) =>
+              [
+                '    <td align="center" valign="top" width="16.66%">',
+                `      <a href="https://github.com/${p.login}">`,
+                `        <img src="https://github.com/${p.login}.png?size=100" width="80" height="80" alt="${escape(p.login)}" />`,
+                `        <br /><sub><b>${escape(p.name)}</b></sub>`,
+                '      </a>',
+                '    </td>',
+              ].join('\n');
+
+            const rows = [];
+            for (let i = 0; i < people.length; i += PER_ROW) {
+              const group = people.slice(i, i + PER_ROW);
+              rows.push(['  <tr>', ...group.map(cell), '  </tr>'].join('\n'));
+            }
+
+            const block = [
+              START,
+              '',
+              '<table>',
+              ...rows,
+              '</table>',
+              '',
+              `<sub>Listing the ${people.length} member${people.length === 1 ? '' : 's'} whose organization membership is public. ` +
+                'Membership visibility is yours to set, and only you can change it: open ' +
+                '<a href="https://github.com/orgs/MCA-NITW/people">the People tab</a>, find your username, ' +
+                'and switch the dropdown to <b>Public</b>. This grid picks it up automatically.</sub>',
+              '',
+              END,
+            ].join('\n');
+
+            const readme = fs.readFileSync(path, 'utf8');
+            const startIdx = readme.indexOf(START);
+            const endIdx = readme.indexOf(END);
+            if (startIdx === -1 || endIdx === -1) {
+              core.setFailed(`Missing ${START} / ${END} markers in ${path}.`);
+              return;
+            }
+
+            const updated =
+              readme.slice(0, startIdx) + block + readme.slice(endIdx + END.length);
+
+            if (updated === readme) {
+              core.info(`No change: ${people.length} public member(s) already rendered.`);
+              core.setOutput('changed', 'false');
+              return;
+            }
+
+            fs.writeFileSync(path, updated);
+            core.info(`Rendered ${people.length} public member(s).`);
+            core.setOutput('changed', 'true');
+
+      - name: Commit if the grid changed
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- profile/README.md; then
+            echo "profile/README.md unchanged; nothing to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add profile/README.md
+          git commit -m "chore(profile): refresh public members grid"
+          git push
