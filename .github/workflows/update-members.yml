@@ -1,37 +1,39 @@
 name: 👥 Update Members in Profile README
 
-# Regenerates the members grid in profile/README.md from the org's PUBLIC member
-# list, then commits only when the rendered block actually changed.
+# Regenerates the members grid at the bottom of profile/README.md from the FULL
+# organization member list, then commits only when the rendered block changed.
 #
-# Why public members only: GitHub makes membership visibility member-controlled.
-# Per the REST docs for PUT /orgs/{org}/public_members/{username}, "The user can
-# publicize their own membership. (A user cannot publicize the membership for
-# another user.)" So an owner cannot opt anyone in, and hardcoding the members
-# who chose private would publish exactly what that setting hides. Members who
-# flip themselves to public appear here on the next run, with no code change.
+# This lists every member, including those whose membership visibility is
+# private, which is a deliberate org decision. Two consequences to keep in mind:
 #
-# Why a schedule rather than an instant trigger: GitHub Actions has no
-# organization-membership event. Workflow triggers are repository-scoped, so
-# there is nothing to hook a "member joined" webhook onto without a GitHub App
-# or an external relay. A daily run plus manual dispatch covers it, and joining
-# is not instant anyway (the invitee has to accept, then set visibility).
+#   1. It needs ORG_INVITE_TOKEN (read:org). The built-in GITHUB_TOKEN is
+#      repository-scoped and only ever sees public members, so if the secret goes
+#      missing this would quietly drop from 45 people to 5. The shrink guard
+#      below exists to make that fail loudly instead.
+#   2. Anyone who would rather not be listed can add their username to
+#      .github/members-optout.txt and the next run drops them.
 
 on:
   schedule:
-    # 06:15 UTC daily. Offset off the hour because scheduled runs queue on the hour.
-    - cron: "15 6 * * *"
+    # Every 6 hours, offset off the hour because scheduled runs queue on the hour.
+    - cron: "15 */6 * * *"
   workflow_dispatch:
+    inputs:
+      allow_shrink:
+        description: Allow the list to shrink by more than half (use after real departures)
+        type: boolean
+        default: false
   push:
     branches: [main]
-    # So a change to the generator or the surrounding README takes effect at once.
+    # So editing the generator, the opt-out list, or the README takes effect at once.
     #
-    # This job commits to profile/README.md, which looks like it should retrigger
-    # itself. It does not: pushes made with the built-in GITHUB_TOKEN do not
+    # This job commits profile/README.md and also triggers on it, which looks
+    # recursive. It is not: pushes made with the built-in GITHUB_TOKEN do not
     # create workflow runs (only workflow_dispatch and repository_dispatch are
-    # exempt from that rule). The generator is idempotent regardless, so even a
-    # retrigger would find no diff and stop after one extra run.
+    # exempt from that rule), and the generator is idempotent regardless.
     paths:
       - .github/workflows/update-members.yml
+      - .github/members-optout.txt
       - profile/README.md
 
 permissions:
@@ -44,40 +46,109 @@ concurrency:
 jobs:
   update-members:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - name: Require the org-scoped token
+        env:
+          ORG_TOKEN: ${{ secrets.ORG_INVITE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ORG_TOKEN}" ]; then
+            echo "::error::ORG_INVITE_TOKEN is not set. Listing private members needs a" \
+              "token with read:org; GITHUB_TOKEN only sees public members and would" \
+              "silently shrink the grid. Add the secret, or switch the script back to" \
+              "listPublicMembers."
+            exit 1
+          fi
+          echo "ORG_INVITE_TOKEN is present."
+
       - name: Regenerate members grid
         uses: actions/github-script@v9
         with:
+          # Needs read:org to see private memberships. GITHUB_TOKEN cannot.
+          github-token: ${{ secrets.ORG_INVITE_TOKEN }}
           script: |
             const fs = require('fs');
             const path = 'profile/README.md';
+            const OPTOUT = '.github/members-optout.txt';
             const START = '<!-- MEMBERS:START -->';
             const END = '<!-- MEMBERS:END -->';
             const PER_ROW = 6;
+            const allowShrink = context.payload.inputs?.allow_shrink === 'true';
 
-            // Public members only. This endpoint is the org's own opt-in list.
-            const members = await github.paginate(github.rest.orgs.listPublicMembers, {
-              org: context.repo.owner,
-              per_page: 100,
-            });
+            // Anyone who asks not to be listed. One username per line, # comments ok.
+            let optOut = new Set();
+            if (fs.existsSync(OPTOUT)) {
+              // Split on \r?\n and strip comments unanchored: a CRLF file would
+              // otherwise leave a trailing \r that defeats an $-anchored regex,
+              // silently keeping a commented line's text in the set. The web
+              // editor and Windows contributors both produce CRLF.
+              optOut = new Set(
+                fs
+                  .readFileSync(OPTOUT, 'utf8')
+                  .split(/\r?\n/)
+                  .map((l) => l.replace(/#.*/, '').trim().toLowerCase())
+                  .filter(Boolean)
+              );
+              core.info(`Opt-out list holds ${optOut.size} username(s).`);
+            }
 
-            if (members.length === 0) {
+            // Every member, public and private. Requires read:org.
+            let members;
+            try {
+              members = await github.paginate(github.rest.orgs.listMembers, {
+                org: context.repo.owner,
+                per_page: 100,
+              });
+            } catch (e) {
               core.setFailed(
-                'listPublicMembers returned nobody. Refusing to wipe the grid, ' +
-                  'since an API hiccup should not look like an empty org.'
+                `listMembers failed (${e.status} ${e.message}). ORG_INVITE_TOKEN likely ` +
+                  'lacks read:org or has expired.'
               );
               return;
             }
 
-            // Resolve display names. listPublicMembers returns the "simple user"
-            // shape, which has no name field.
+            if (members.length === 0) {
+              core.setFailed(
+                'listMembers returned nobody. Refusing to wipe the grid, since an API ' +
+                  'hiccup should not look like an empty org.'
+              );
+              return;
+            }
+
+            const listed = members.filter((m) => !optOut.has(m.login.toLowerCase()));
+            core.info(`${members.length} member(s), ${listed.length} after opt-outs.`);
+
+            const readme = fs.readFileSync(path, 'utf8');
+            const startIdx = readme.indexOf(START);
+            const endIdx = readme.indexOf(END);
+            if (startIdx === -1 || endIdx === -1) {
+              core.setFailed(`Missing ${START} / ${END} markers in ${path}.`);
+              return;
+            }
+
+            // Guard the one failure mode that looks like success: if the token loses
+            // read:org, listMembers still returns 200 with only the public members.
+            const previous = (readme.slice(startIdx, endIdx).match(/\.png\?size=100/g) || [])
+              .length;
+            if (previous > 0 && listed.length < previous * 0.5 && !allowShrink) {
+              core.setFailed(
+                `Refusing to rewrite the grid: ${listed.length} members now against ` +
+                  `${previous} already rendered. That usually means the token lost ` +
+                  'read:org and is only seeing public members. Re-dispatch with ' +
+                  'allow_shrink=true if the drop is real.'
+              );
+              return;
+            }
+
+            // Resolve display names. listMembers returns the "simple user" shape,
+            // which carries no name field.
             const people = [];
-            for (const m of members) {
+            for (const m of listed) {
               let name = null;
               try {
                 const { data } = await github.rest.users.getByUsername({ username: m.login });
@@ -88,7 +159,7 @@ jobs:
               people.push({ login: m.login, name: (name || m.login).trim() });
             }
 
-            // Sorted so the output is deterministic and reruns produce no diff.
+            // Sorted so output is deterministic and reruns produce no diff.
             people.sort((a, b) => a.login.toLowerCase().localeCompare(b.login.toLowerCase()));
 
             const escape = (s) =>
@@ -106,8 +177,9 @@ jobs:
 
             const rows = [];
             for (let i = 0; i < people.length; i += PER_ROW) {
-              const group = people.slice(i, i + PER_ROW);
-              rows.push(['  <tr>', ...group.map(cell), '  </tr>'].join('\n'));
+              rows.push(
+                ['  <tr>', ...people.slice(i, i + PER_ROW).map(cell), '  </tr>'].join('\n')
+              );
             }
 
             const block = [
@@ -117,34 +189,24 @@ jobs:
               ...rows,
               '</table>',
               '',
-              `<sub>Listing the ${people.length} member${people.length === 1 ? '' : 's'} whose organization membership is public. ` +
-                'Membership visibility is yours to set, and only you can change it: open ' +
-                '<a href="https://github.com/orgs/MCA-NITW/people">the People tab</a>, find your username, ' +
-                'and switch the dropdown to <b>Public</b>. This grid picks it up automatically.</sub>',
+              `<sub>All ${people.length} member${people.length === 1 ? '' : 's'} of the organization, refreshed automatically. ` +
+                'Would rather not be listed? Add your username to ' +
+                '<a href="https://github.com/MCA-NITW/.github/blob/main/.github/members-optout.txt">.github/members-optout.txt</a> ' +
+                'or ask an admin, and the next run drops you.</sub>',
               '',
               END,
             ].join('\n');
-
-            const readme = fs.readFileSync(path, 'utf8');
-            const startIdx = readme.indexOf(START);
-            const endIdx = readme.indexOf(END);
-            if (startIdx === -1 || endIdx === -1) {
-              core.setFailed(`Missing ${START} / ${END} markers in ${path}.`);
-              return;
-            }
 
             const updated =
               readme.slice(0, startIdx) + block + readme.slice(endIdx + END.length);
 
             if (updated === readme) {
-              core.info(`No change: ${people.length} public member(s) already rendered.`);
-              core.setOutput('changed', 'false');
+              core.info(`No change: ${people.length} member(s) already rendered.`);
               return;
             }
 
             fs.writeFileSync(path, updated);
-            core.info(`Rendered ${people.length} public member(s).`);
-            core.setOutput('changed', 'true');
+            core.info(`Rendered ${people.length} member(s).`);
 
       - name: Commit if the grid changed
         run: |
@@ -158,5 +220,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add profile/README.md
-          git commit -m "chore(profile): refresh public members grid"
+          git commit -m "chore(profile): refresh members grid"
           git push

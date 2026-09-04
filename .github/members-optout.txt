@@ -1,0 +1,11 @@
+# Members who should NOT appear in the grid at the bottom of the org profile README.
+#
+# The grid lists every organization member, including those whose GitHub
+# membership visibility is private. If you would rather not be listed, add your
+# username below (one per line) and the next scheduled run drops you. Opening a
+# PR against this file is enough, or ask an admin to add you.
+#
+# Anything after a # is ignored, and matching is case-insensitive.
+#
+# Example:
+#   some-username
