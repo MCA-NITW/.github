@@ -67,6 +67,18 @@ jobs:
 
           ORG_NAME="MCA-NITW"
 
+          # Without this, a missing secret sends "Authorization: token " and
+          # GitHub answers 401, which fell into the generic failure branch and
+          # told the requester to check their username. That misdiagnoses an org
+          # configuration problem as their mistake.
+          if [ -z "${ORG_INVITE_TOKEN:-}" ]; then
+            echo "outcome=no-token" >> "$GITHUB_OUTPUT"
+            echo "message=ORG_INVITE_TOKEN is not configured for this organization" >> "$GITHUB_OUTPUT"
+            echo "::error::ORG_INVITE_TOKEN is not set, so no invitation could be sent." \
+              "Add an org secret with a token holding admin:org."
+            exit 0
+          fi
+
           HTTP_CODE=$(curl -sS -o /tmp/invite_body.json -w "%{http_code}" \
             -X PUT \
             -H "Authorization: token ${ORG_INVITE_TOKEN}" \
@@ -195,6 +207,34 @@ jobs:
               body,
             });
 
+      - name: Comment on issue - Org token not configured
+        if: steps.send-invite.outputs.outcome == 'no-token'
+        uses: actions/github-script@v9
+        env:
+          USERNAME: ${{ steps.extract-username.outputs.username }}
+        with:
+          script: |
+            const username = process.env.USERNAME;
+            const body = [
+              `⚙️ **Nothing wrong on your end.**`,
+              ``,
+              `Hi @${username}, your request came through fine. The organization's`,
+              `invitation token is not configured, so the automation could not send`,
+              `the invite.`,
+              ``,
+              `An admin needs to add an \`ORG_INVITE_TOKEN\` org secret holding a token`,
+              `with \`admin:org\`. Once that is in place, an admin can re-run this by`,
+              `commenting \`/approve\`, or invite you directly.`,
+              ``,
+              `Tagging @Sagargupta16 and @sachin-gupta99. Sorry for the wait!`,
+            ].join('\n');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
       - name: Comment on issue - Username missing
         if: steps.extract-username.outputs.username == ''
         uses: actions/github-script@v9
@@ -247,6 +287,8 @@ jobs:
               invited: 'invite-sent',
               'already-member': 'member-joined',
               failed: 'invite-failed',
+              // Needs an admin to add the secret, not a retry from the requester.
+              'no-token': 'pending-review',
             };
             const newLabel = map[outcome];
             if (newLabel) {
@@ -297,6 +339,15 @@ jobs:
           set -euo pipefail
 
           ORG_NAME="MCA-NITW"
+
+          # Same reason as the automatic path: report a missing secret as a
+          # configuration problem instead of a bare HTTP 401.
+          if [ -z "${ORG_INVITE_TOKEN:-}" ]; then
+            echo "outcome=failed" >> "$GITHUB_OUTPUT"
+            echo "http_code=no-token" >> "$GITHUB_OUTPUT"
+            echo "::error::ORG_INVITE_TOKEN is not set; add an org secret with admin:org."
+            exit 0
+          fi
 
           HTTP_CODE=$(curl -sS -o /tmp/manual_body.json -w "%{http_code}" \
             -X PUT \

@@ -148,15 +148,28 @@ jobs:
             // Resolve display names. listMembers returns the "simple user" shape,
             // which carries no name field.
             const people = [];
+            let ghosts = 0;
             for (const m of listed) {
               let name = null;
               try {
                 const { data } = await github.rest.users.getByUsername({ username: m.login });
                 name = data.name;
               } catch (e) {
+                if (e.status === 404) {
+                  // Deleted account. The org still lists the membership, but the
+                  // avatar 404s, which renders a broken image and drags that
+                  // column out of shape for the whole table. Drop it rather than
+                  // leave a hole. A transient error below keeps the member.
+                  core.warning(`Skipping ${m.login}: account no longer exists.`);
+                  ghosts++;
+                  continue;
+                }
                 core.warning(`Could not read profile for ${m.login}: ${e.message}`);
               }
               people.push({ login: m.login, name: (name || m.login).trim() });
+            }
+            if (ghosts > 0) {
+              core.info(`Dropped ${ghosts} deleted account(s) still listed by the org.`);
             }
 
             // Sorted so output is deterministic and reruns produce no diff.
@@ -165,11 +178,29 @@ jobs:
             const escape = (s) =>
               s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+            // Avatar size and the absence of a td width are both load-bearing.
+            //
+            // GitHub's markdown CSS renders tables as `display: block; width:
+            // max-content; max-width: 100%`, and injects `max-width: 100%;
+            // height: auto` onto every image. So when a 6-wide table cannot fit
+            // its container, some columns get squeezed and their avatars scale
+            // down while others stay full size, which is what made the grid look
+            // ragged. Measured across container widths from 375px to 896px:
+            //
+            //   6 across @ 80px  ->  ragged below 700px (58-80px at 650px)
+            //   6 across @ 72px  ->  ragged by 16px
+            //   6 across @ 64px  ->  ragged by 8px
+            //   6 across @ 56px  ->  even at EVERY width, including 375px mobile
+            //
+            // At 56px the avatar is narrower than the username text, so the text
+            // becomes the uniform width driver and no column gets squeezed. The
+            // percentage td width made no difference either way, so it is gone.
+            // Source stays at ?size=100 so the image is still crisp on retina.
             const cell = (p) =>
               [
-                '    <td align="center" valign="top" width="16.66%">',
+                '    <td align="center" valign="top">',
                 `      <a href="https://github.com/${p.login}">`,
-                `        <img src="https://github.com/${p.login}.png?size=100" width="80" height="80" alt="${escape(p.login)}" />`,
+                `        <img src="https://github.com/${p.login}.png?size=100" width="56" height="56" alt="${escape(p.login)}" />`,
                 `        <br /><sub><b>${escape(p.name)}</b></sub>`,
                 '      </a>',
                 '    </td>',
@@ -189,7 +220,7 @@ jobs:
               ...rows,
               '</table>',
               '',
-              `<sub>All ${people.length} member${people.length === 1 ? '' : 's'} of the organization, refreshed automatically. ` +
+              `<sub>${people.length} member${people.length === 1 ? '' : 's'} of the organization, refreshed automatically. ` +
                 'Would rather not be listed? Add your username to ' +
                 '<a href="https://github.com/MCA-NITW/.github/blob/main/.github/members-optout.txt">.github/members-optout.txt</a> ' +
                 'or ask an admin, and the next run drops you.</sub>',
@@ -197,8 +228,14 @@ jobs:
               END,
             ].join('\n');
 
-            const updated =
-              readme.slice(0, startIdx) + block + readme.slice(endIdx + END.length);
+            // Keep the Members badge in step with the grid. A hardcoded count
+            // next to a self-updating grid is guaranteed to drift the moment
+            // anyone joins or leaves.
+            const updated = (
+              readme.slice(0, startIdx) +
+              block +
+              readme.slice(endIdx + END.length)
+            ).replace(/(badge\/Members-)\d+(-blue)/, `$1${people.length}$2`);
 
             if (updated === readme) {
               core.info(`No change: ${people.length} member(s) already rendered.`);
