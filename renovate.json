@@ -1,16 +1,21 @@
 {
 	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
-	"description": "Shared MCA-NITW Renovate preset for all MCA-NITW repos. One grouped PR per repo in the first week of each month, auto-merged when CI is green. Security fixes bypass the schedule and auto-merge immediately. Extend via: extends: ['github>mca-nitw/.github']",
+	"description": [
+		"Shared MCA-NITW Renovate preset for all MCA-NITW repos. Extend via: extends: ['github>mca-nitw/.github'].",
+		"Cadence: one grouped minor/patch PR plus one grouped major PR per repo in the first week of each month, auto-merged when CI is green. prConcurrentLimit 1 serialises them so they never pile up. Security fixes ignore the schedule and all limits by design.",
+		"separateMajorMinor is deliberately left at its default (true). It takes priority over packageRule groups, which is why majors get their own PR. Do NOT set it to false: one blocked major (Babel 8 against react-scripts, TypeScript 7 against typescript-eslint in Sept 2026) would then hold every minor and patch hostage for the whole month.",
+		"lockFileMaintenance is off. It was a third monthly PR stream and the grouped update already refreshes in-range lock entries. It also produced PRs whose lockfile predated the base branch, which read as mergeable while actually being out of sync with package.json.",
+		"Kept intentionally identical to github>Sagargupta16/shared-workflows apart from the first-week schedule, so both fleets behave the same way."
+	],
 	"extends": ["config:recommended", ":dependencyDashboard"],
 	"timezone": "Asia/Kolkata",
 	"schedule": ["on the 1st through 7th day of the month"],
 	"prCreation": "immediate",
-	"prConcurrentLimit": 0,
-	"prHourlyLimit": 0,
+	"prConcurrentLimit": 1,
+	"prHourlyLimit": 2,
 	"rangeStrategy": "replace",
 	"lockFileMaintenance": {
-		"enabled": true,
-		"schedule": ["on the 1st through 7th day of the month"]
+		"enabled": false
 	},
 	"packageRules": [
 		{
